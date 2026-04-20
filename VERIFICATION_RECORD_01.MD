@@ -127,25 +127,59 @@ docker-compose.yml reviewed:
 
 | Case | Scenario | Expected | Result |
 |---|---|---|---|
-| TC-1.3-A | Happy path — `dbt debug` passes all checks | Command exits 0; all checks show `[OK]` inside container | BLOCKED — depends on Task 1.2 Docker build passing |
-| TC-1.3-B | Happy path — `dbt list` discovers all model stubs | Command lists all 6 models: `silver_transaction_codes`, `silver_accounts`, `silver_transactions`, `silver_quarantine`, `gold_daily_summary`, `gold_weekly_account_summary` | BLOCKED — depends on Task 1.2 Docker build passing |
-| TC-1.3-C | Failure case — DuckDB adapter not found | `dbt debug` fails; Dockerfile pip install from Task 1.2 is incomplete; return to 1.2 | BLOCKED — depends on Task 1.2 Docker build passing |
+| TC-1.3-A | Happy path — `dbt debug` passes all checks | Command exits 0; all checks show `[OK]` inside container | PASS — exits 0; `profiles.yml [OK]`, `dbt_project.yml [OK]`, `git [OK]`, `Connection test [OK]`; `All checks passed!` |
+| TC-1.3-B | Happy path — `dbt list` discovers all model stubs | Command lists all 6 models: `silver_transaction_codes`, `silver_accounts`, `silver_transactions`, `silver_quarantine`, `gold_daily_summary`, `gold_weekly_account_summary` | PASS — `Found 6 models`; all 6 listed under `credit_card_lake.silver` and `credit_card_lake.gold` |
+| TC-1.3-C | Failure case — DuckDB adapter not found | `dbt debug` fails; Dockerfile pip install from Task 1.2 is incomplete; return to 1.2 | N/A — adapter `duckdb=1.7.5` registered and connected successfully |
 
 **Invariant Notes:** No invariants touched.
 
 ### Prediction Statement
 
-TC-1.3-A through C: PENDING — Task 1.3 not yet implemented.
+TC-1.3-A: `dbt debug` exits 0; all checks `[OK]` — profile name `credit_card_lake` matches `dbt_project.yml`, DuckDB path `/app/data/dbt_duckdb.db` accessible, adapter registered.
+
+TC-1.3-B: `dbt list` finds exactly 6 models across `silver/` and `gold/` subdirectories.
+
+TC-1.3-C: N/A — `dbt-duckdb==1.7.*` installed in Task 1.2; adapter registered as expected.
 
 ### CC Challenge Output
 
 > Prompt given to CC: "What did you not test in this task?"
 
-PENDING — Task 1.3 not yet implemented.
+CC response: Did not test that (1) `dbt_project.yml` `profile:` field matches the profile name in `profiles.yml` exactly (case-sensitive), (2) `target-path: "target"` is respected (target/ written to correct location), (3) model stubs contain only the `-- TODO:` comment and no residual SQL, (4) `threads: 1` is honoured at runtime (not overridden by env var).
+
+Engineer decision: **Accept** — items (1) and (3) are material; verified below.
+
+### Supplementary Checks
+
+```
+# Profile name match (dbt_project.yml profile: == profiles.yml top-level key)
+grep "^profile:" dbt_project/dbt_project.yml   → profile: credit_card_lake
+grep "^credit_card_lake:" dbt_project/profiles.yml → credit_card_lake:  ✓ PASS
+
+# All model stubs contain only the TODO comment
+for f in dbt_project/models/**/*.sql; do cat $f; done
+→ each file: -- TODO: implement in Session [N]  ✓ PASS
+```
 
 ### Code Review
 
-PENDING — Task 1.3 not yet implemented.
+`dbt_project.yml` reviewed:
+- `name: credit_card_lake` ✓ matches fixed stack
+- `profile: credit_card_lake` ✓ matches profiles.yml key
+- `model-paths: ["models"]` ✓
+- `target-path: "target"` ✓
+- `models.credit_card_lake.silver/gold: +materialized: table` ✓
+
+`profiles.yml` reviewed:
+- Profile key `credit_card_lake` ✓ matches dbt_project.yml
+- `target: dev` ✓ matches fixed stack
+- `type: duckdb` ✓
+- `path: /app/data/dbt_duckdb.db` ✓ matches fixed stack
+- `threads: 1` ✓ matches fixed stack
+
+Model stubs reviewed:
+- All 6 files contain only `-- TODO: implement in Session [N]` ✓
+- No logic, no config blocks, no residual `pbvi_de/` content ✓
 
 ---
 

@@ -17,7 +17,7 @@
 |---|---|---|---|
 | 1.1 | Repository and Directory Scaffold | DONE | `5ed25c7`, `289c725` |
 | 1.2 | Docker Environment and Python Dependencies | DONE | `ced3b63` |
-| 1.3 | dbt Project Configuration and Profile Wiring | NOT STARTED | |
+| 1.3 | dbt Project Configuration and Profile Wiring | DONE | `b71ded2`, `d83c363` |
 | 1.4 | pipeline.py Stub with Entry Points and run_id Generation | NOT STARTED | |
 
 ---
@@ -29,6 +29,9 @@
 | 1.1 | Relocated `Documents/` to `docs/` | `docs/` is the PBVI mandatory directory; `Documents/` from initial main commit was a pre-scaffold placeholder |
 | 1.1 | Created minimal `pipeline.py` stub | Companion scaffold file was absent; Task 1.4 will implement fully |
 | 1.2 | Rewrote Dockerfile with inline `pip install` instead of `requirements.txt` | New project structure uses `pipeline.py` not a `pipeline/` package; no `requirements.txt` exists at project root |
+| 1.3 | Corrected `dbt_project.yml` and `profiles.yml` profile names from `transactions_lake` to `credit_card_lake` | Copied scaffold used wrong project name; fixed to match CLAUDE.md fixed stack |
+| 1.3 | Reset all 6 model stubs to `-- TODO: implement in Session [N]` | Copied stubs contained full `pbvi_de/` implementations; Task 1.3 scope is config only, not model logic |
+| 1.3 | Added `.gitignore` and `dbt_project/.gitignore` | dbt artifacts (`target/`, `logs/`, `.user.yml`) were committed accidentally; gitignore prevents recurrence |
 
 ---
 
