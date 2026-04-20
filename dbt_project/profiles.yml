@@ -1,6 +1,7 @@
-transactions_lake:
+credit_card_lake:
   target: dev
   outputs:
     dev:
       type: duckdb
-      path: /app/data/pipeline/dbt.duckdb
+      path: /app/data/dbt_duckdb.db
+      threads: 1
