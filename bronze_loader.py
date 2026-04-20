@@ -17,7 +17,8 @@ def partition_exists_and_valid(path: Path) -> bool:
             f"SELECT count(*) FROM read_parquet('{path}')"
         ).fetchone()[0]
         return count > 0
-    except FileNotFoundError:
+    except Exception:
+        # Covers FileNotFoundError (race) and corrupt/partial Parquet files
         return False
 
 
