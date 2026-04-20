@@ -3,7 +3,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
-from pipeline import BRONZE_DIR, SOURCE_DIR
+# Path constants duplicated from pipeline.py to avoid circular import
+# (pipeline.py imports bronze_loader; bronze_loader cannot import pipeline)
+BRONZE_DIR = Path("/app/data/bronze")
+SOURCE_DIR  = Path("/app/source")
 
 
 def partition_path(entity: str, date: str) -> Path:

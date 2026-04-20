@@ -3,6 +3,8 @@ import sys
 import uuid
 from pathlib import Path
 
+from bronze_loader import load_bronze_transactions, load_bronze_accounts
+
 DATA_DIR        = Path("/app/data")
 SOURCE_DIR      = Path("/app/source")
 BRONZE_DIR      = DATA_DIR / "bronze"
@@ -14,7 +16,15 @@ DBT_PROJECT_DIR = Path("/app/dbt_project")
 
 def run_historical(start_date: str, end_date: str) -> None:
     run_id = str(uuid.uuid4())
-    print(f"[HISTORICAL] run_id={run_id} start={start_date} end={end_date} — NOT IMPLEMENTED")
+    print(f"[HISTORICAL] run_id={run_id} start={start_date} end={end_date}")
+
+    # Bronze — single date only (range iteration comes in Session 8)
+    load_bronze_transactions(date=start_date, run_id=run_id)
+    load_bronze_accounts(date=start_date, run_id=run_id)
+
+    # Silver and Gold — not implemented yet
+    print("Silver — NOT IMPLEMENTED")
+    print("Gold   — NOT IMPLEMENTED")
 
 
 def run_incremental() -> None:
