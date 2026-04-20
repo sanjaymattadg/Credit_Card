@@ -1,0 +1,6 @@
+transactions_lake:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: /app/data/pipeline/dbt.duckdb
