@@ -1,8 +1,9 @@
 import duckdb
+from datetime import datetime
 from pathlib import Path
 from typing import Dict
 
-from pipeline import BRONZE_DIR
+from pipeline import BRONZE_DIR, SOURCE_DIR
 
 
 def partition_path(entity: str, date: str) -> Path:
@@ -24,3 +25,50 @@ def partition_exists_and_valid(path: Path) -> bool:
 
 def read_csv_to_duckdb(filepath: Path, schema: Dict[str, str]) -> duckdb.DuckDBPyRelation:
     return duckdb.read_csv(str(filepath), dtype=schema)
+
+
+def load_bronze_transactions(date: str, run_id: str) -> None:
+    source_file = f"transactions_{date}.csv"
+    src_path    = SOURCE_DIR / source_file
+    out_path    = partition_path("transactions", date)
+
+    if partition_exists_and_valid(out_path):
+        print(f"SKIP bronze_transactions {date} — partition already valid")
+        return
+
+    schema = {
+        "transaction_id":   "VARCHAR",
+        "account_id":       "VARCHAR",
+        "transaction_date": "DATE",
+        "amount":           "DECIMAL(18,4)",
+        "transaction_code": "VARCHAR",
+        "merchant_name":    "VARCHAR",
+        "channel":          "VARCHAR",
+    }
+
+    # Read with explicit schema (INV-02) then materialise to Arrow for clean connection hand-off
+    arrow_data  = read_csv_to_duckdb(src_path, schema).arrow()
+    ingested_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    con = duckdb.connect()
+    con.register("_src", arrow_data)
+    con.execute(f"""
+        COPY (
+            SELECT
+                transaction_id,
+                account_id,
+                transaction_date,
+                amount,
+                transaction_code,
+                merchant_name,
+                channel,
+                '{source_file}'           AS _source_file,
+                TIMESTAMP '{ingested_at}' AS _ingested_at,
+                '{run_id}'                AS _pipeline_run_id
+            FROM _src
+        ) TO '{out_path}' (FORMAT PARQUET)
+    """)
+
+    if not partition_exists_and_valid(out_path):
+        raise RuntimeError(f"Post-write validation failed for bronze_transactions {date}")
