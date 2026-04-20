@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir \
     pyarrow
 
 COPY pipeline.py /app/pipeline.py
+COPY bronze_loader.py /app/bronze_loader.py
 COPY dbt_project/ /app/dbt_project/
 
 CMD ["python", "pipeline.py"]
