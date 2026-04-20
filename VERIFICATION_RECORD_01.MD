@@ -266,6 +266,22 @@ docker compose run --rm pipeline python -c "import pipeline; print('import OK')"
 
 ---
 
+## Session 1 Integration Check
+
+*Source: EXECUTION_PLAN.MD — Session 1 Integration Check block*
+*Run date: 2026-04-20*
+
+| # | Command | Expected | Result |
+|---|---|---|---|
+| 1 | `docker compose run --rm pipeline python pipeline.py --help` | Exits 0; lists `historical` and `incremental` subcommands | PASS — exits 0; both subcommands listed with descriptions |
+| 2 | `docker compose run --rm pipeline dbt debug --project-dir /app/dbt_project --profiles-dir /app/dbt_project` | Exits 0; `All checks passed!` | PASS — exits 0; `profiles.yml [OK]`, `dbt_project.yml [OK]`, `git [OK]`, `Connection test [OK]`; `All checks passed!` |
+| 3 | `docker compose run --rm pipeline python -c "import dbt; import duckdb; print('deps OK')"` | Prints `deps OK` | PASS — prints `deps OK`; exits 0 |
+| 4 | `ls source/ \| wc -l` | 15 (7 transactions + 7 accounts + 1 codes) | PASS — 15 |
+
+**Integration check verdict: PASSED** — all 4 commands return expected output. PR may be raised.
+
+---
+
 ## Verification Verdict
 
 - [x] All test cases executed and results recorded
