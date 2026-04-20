@@ -1,0 +1,16 @@
+# Generated data outputs
+data/**
+!data/**/.gitkeep
+
+# dbt database
+*.db
+
+# IDE
+.vscode/
+
+# Claude
+.claude/
+
+# Python
+__pycache__/
+*.pyc
