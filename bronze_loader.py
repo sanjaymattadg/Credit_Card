@@ -130,3 +130,20 @@ def load_bronze_accounts(date: str, run_id: str) -> None:
 
     if not partition_exists_and_valid(out_path):
         raise RuntimeError(f"Post-write validation failed for bronze_accounts {date}")
+
+
+def bronze_row_count(entity: str, date: str) -> int:
+    path = partition_path(entity, date)
+    if not partition_exists_and_valid(path):
+        return 0
+    return duckdb.connect().execute(
+        f"SELECT count(*) FROM read_parquet('{path}')"
+    ).fetchone()[0]
+
+
+def bronze_transactions_row_count(date: str) -> int:
+    return bronze_row_count("transactions", date)
+
+
+def bronze_accounts_row_count(date: str) -> int:
+    return bronze_row_count("accounts", date)
