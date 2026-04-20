@@ -1,0 +1,12 @@
+name: credit_card_lake
+version: "1.0.0"
+config-version: 2
+profile: credit_card_lake
+model-paths: ["models"]
+target-path: "target"
+models:
+  credit_card_lake:
+    silver:
+      +materialized: table
+    gold:
+      +materialized: table

@@ -1,0 +1,7 @@
+services:
+  pipeline:
+    build: .
+    volumes:
+      - ./source:/app/source:ro
+      - ./data:/app/data
+      - ./dbt_project:/app/dbt_project
