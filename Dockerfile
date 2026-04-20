@@ -4,8 +4,14 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-COPY pipeline/requirements.txt /app/pipeline/requirements.txt
+RUN pip install --no-cache-dir \
+    "dbt-core==1.7.*" \
+    "dbt-duckdb==1.7.*" \
+    duckdb \
+    pandas \
+    pyarrow
 
-RUN pip install --no-cache-dir -r /app/pipeline/requirements.txt
+COPY pipeline.py /app/pipeline.py
+COPY dbt_project/ /app/dbt_project/
 
-ENV PYTHONPATH=/app
+CMD ["python", "pipeline.py"]

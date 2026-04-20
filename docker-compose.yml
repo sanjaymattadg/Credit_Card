@@ -1,12 +1,7 @@
-version: "3.9"
-
 services:
   pipeline:
     build: .
-    working_dir: /app
     volumes:
-      - ./data:/app/data
       - ./source:/app/source:ro
-      - ./dbt:/app/dbt
-      - ./pipeline:/app/pipeline
-    command: python --version
+      - ./data:/app/data
+      - ./dbt_project:/app/dbt_project
