@@ -18,7 +18,7 @@
 | 1.1 | Repository and Directory Scaffold | DONE | `5ed25c7`, `289c725` |
 | 1.2 | Docker Environment and Python Dependencies | DONE | `ced3b63` |
 | 1.3 | dbt Project Configuration and Profile Wiring | DONE | `b71ded2`, `d83c363` |
-| 1.4 | pipeline.py Stub with Entry Points and run_id Generation | NOT STARTED | |
+| 1.4 | pipeline.py Stub with Entry Points and run_id Generation | DONE | `063c78a` |
 
 ---
 
@@ -32,6 +32,7 @@
 | 1.3 | Corrected `dbt_project.yml` and `profiles.yml` profile names from `transactions_lake` to `credit_card_lake` | Copied scaffold used wrong project name; fixed to match CLAUDE.md fixed stack |
 | 1.3 | Reset all 6 model stubs to `-- TODO: implement in Session [N]` | Copied stubs contained full `pbvi_de/` implementations; Task 1.3 scope is config only, not model logic |
 | 1.3 | Added `.gitignore` and `dbt_project/.gitignore` | dbt artifacts (`target/`, `logs/`, `.user.yml`) were committed accidentally; gitignore prevents recurrence |
+| 1.4 | Replaced Task 1.1 minimal stub with full argparse CLI + constants block | Task 1.1 stub had no run_id or constants; Task 1.4 is the intended implementation point |
 
 ---
 
@@ -41,6 +42,7 @@
 |---|---|---|
 | 1.1 | `pipeline.py` stub absent from companion scaffold (only `pipeline/` package in `pbvi_de/`) | Flagged per EXECUTION_PLAN failure-case rule; minimal stub created with argparse CLI structure; Task 1.4 will implement fully |
 | 1.1 | Copied `Dockerfile` and `docker-compose.yml` reference old `pbvi_de/` structure (`pipeline/requirements.txt`, `./dbt`, `./pipeline/`) | Resolved in Task 1.2 — both files rewritten for new project layout |
+| 1.1 | TC-1.1-D — `pipeline.py` absent from companion scaffold; minimal stub created | **RESOLVED** — Task 1.4 implemented fully; INV-35 satisfied |
 
 ---
 
@@ -55,13 +57,13 @@
 ## Session Completion
 
 ```
-Session integration check:  [ ] PASSED
+Session integration check:  [x] PASSED — pipeline.py --help, dbt debug, deps OK, 15 CSVs
 
-All tasks verified:          [ ] Yes
+All tasks verified:          [x] Yes — Tasks 1.1, 1.2, 1.3, 1.4 all PASS
 
 PR raised:                   [ ] Yes — PR#: session/s01 -> main
 
-Status updated to:           In Progress
+Status updated to:           Complete (pending PR)
 
 Engineer sign-off:           ___________________________________
 ```
