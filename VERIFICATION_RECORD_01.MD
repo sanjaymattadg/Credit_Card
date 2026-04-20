@@ -64,26 +64,60 @@ Scaffold only — no logic to review. Verified: all companion files copied unmod
 
 | Case | Scenario | Expected | Result |
 |---|---|---|---|
-| TC-1.2-A | Happy path — `docker compose build` succeeds | Command exits 0; final line confirms successful build | FAIL — build exits 17; `pipeline/requirements.txt: not found`; Dockerfile references old `pbvi_de/` structure; blocked on Task 1.2 |
-| TC-1.2-B | Happy path — correct Python version in container | `docker compose run --rm pipeline python --version` reports Python 3.11.x | BLOCKED — build must pass first |
-| TC-1.2-C | Happy path — all required packages importable | `import dbt; import duckdb; import pandas; import pyarrow; print('OK')` prints `OK` inside container | BLOCKED — build must pass first |
-| TC-1.2-D | Failure case — pip install version conflict | Build fails; task stops; engineer resolves version pin before proceeding | N/A — build fails at COPY step before pip install |
+| TC-1.2-A | Happy path — `docker compose build` succeeds | Command exits 0; final line confirms successful build | PASS — exits 0; `pipeline  Built`; installed `dbt-core-1.7.19`, `dbt-duckdb-1.7.5` |
+| TC-1.2-B | Happy path — correct Python version in container | `docker compose run --rm pipeline python --version` reports Python 3.11.x | PASS — `Python 3.11.15` |
+| TC-1.2-C | Happy path — all required packages importable | `import dbt; import duckdb; import pandas; import pyarrow; print('OK')` prints `OK` inside container | PASS — all 4 packages import; prints `OK`; versions: dbt-core 1.7.19, dbt-duckdb 1.7.5, duckdb 1.5.2, pandas 3.0.2, pyarrow 23.0.1 |
+| TC-1.2-D | Failure case — pip install version conflict | Build fails; task stops; engineer resolves version pin before proceeding | N/A — build succeeded with no version conflicts |
 
 **Invariant Notes:** No invariants touched.
 
 ### Prediction Statement
 
-TC-1.2-A through D: PENDING — Task 1.2 not yet implemented. Dockerfile and docker-compose.yml require rewrite to match new project structure before any Docker tests can run.
+TC-1.2-A: `docker compose build` exits 0; all pip installs resolve cleanly under `dbt-core==1.7.*` and `dbt-duckdb==1.7.*` pins.
+
+TC-1.2-B: `python --version` reports Python 3.11.x — base image is `python:3.11-slim`.
+
+TC-1.2-C: All four packages (`dbt`, `duckdb`, `pandas`, `pyarrow`) import without error; prints `OK`.
+
+TC-1.2-D: No conflict expected — version pins are compatible; build proceeds past pip install step.
 
 ### CC Challenge Output
 
 > Prompt given to CC: "What did you not test in this task?"
 
-PENDING — Task 1.2 not yet implemented.
+CC response: Did not test that (1) `pipeline.py` is present inside the container at `/app/pipeline.py`, (2) `dbt_project/` is present at `/app/dbt_project/` inside the container, (3) the `./source` mount is truly read-only (write attempt would be rejected), (4) `CMD ["python", "pipeline.py"]` is the default entry point (not overridden).
+
+Engineer decision: **Accept** — items (1) and (2) are material; verified below.
+
+### Supplementary Checks
+
+```
+# pipeline.py present in container
+docker compose run --rm pipeline ls /app/pipeline.py  → PASS
+
+# dbt_project/ present in container
+docker compose run --rm pipeline ls /app/dbt_project/  → PASS (bind mount active)
+
+# source mount is read-only
+docker compose run --rm pipeline touch /app/source/test  → PASS (touch: cannot touch: Read-only file system)
+```
 
 ### Code Review
 
-PENDING — Task 1.2 not yet implemented.
+Dockerfile reviewed:
+- Base image `python:3.11-slim` ✓ matches fixed stack
+- `dbt-core==1.7.*`, `dbt-duckdb==1.7.*` pins ✓ match fixed stack
+- `duckdb`, `pandas`, `pyarrow` installed ✓
+- `COPY pipeline.py` and `COPY dbt_project/` ✓ correct paths
+- `CMD ["python", "pipeline.py"]` ✓ correct default entry point
+- No extra services, no ports ✓
+
+docker-compose.yml reviewed:
+- Service name `pipeline` ✓ matches fixed stack
+- `./source:/app/source:ro` ✓ read-only enforced
+- `./data:/app/data` ✓ read-write for layer outputs
+- `./dbt_project:/app/dbt_project` ✓ read-write for dbt artifacts
+- No database service, no web service, no ports ✓
 
 ---
 
