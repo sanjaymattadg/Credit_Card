@@ -132,6 +132,48 @@ def load_bronze_accounts(date: str, run_id: str) -> None:
         raise RuntimeError(f"Post-write validation failed for bronze_accounts {date}")
 
 
+def load_bronze_transaction_codes(run_id: str) -> None:
+    source_file = "transaction_codes.csv"
+    src_path    = SOURCE_DIR / source_file
+    out_path    = BRONZE_DIR / "transaction_codes" / "data.parquet"
+
+    if partition_exists_and_valid(out_path):
+        print("SKIP bronze_transaction_codes — already loaded")
+        return
+
+    schema = {
+        "transaction_code":       "VARCHAR",
+        "transaction_type":       "VARCHAR",
+        "description":            "VARCHAR",
+        "debit_credit_indicator": "VARCHAR",
+        "affects_balance":        "BOOLEAN",
+    }
+
+    arrow_data  = read_csv_to_duckdb(src_path, schema).arrow()
+    ingested_at = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    con = duckdb.connect()
+    con.register("_src", arrow_data)
+    con.execute(f"""
+        COPY (
+            SELECT
+                transaction_code,
+                transaction_type,
+                description,
+                debit_credit_indicator,
+                affects_balance,
+                '{source_file}'           AS _source_file,
+                TIMESTAMP '{ingested_at}' AS _ingested_at,
+                '{run_id}'                AS _pipeline_run_id
+            FROM _src
+        ) TO '{out_path}' (FORMAT PARQUET)
+    """)
+
+    if not partition_exists_and_valid(out_path):
+        raise RuntimeError("Post-write validation failed for bronze_transaction_codes")
+
+
 def bronze_row_count(entity: str, date: str) -> int:
     path = partition_path(entity, date)
     if not partition_exists_and_valid(path):
