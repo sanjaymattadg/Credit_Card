@@ -8,6 +8,9 @@ data/**
 # IDE
 .vscode/
 
+#folder
+pbvi_de
+
 # Claude
 .claude/
 
