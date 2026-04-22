@@ -77,6 +77,53 @@ valid_so_far AS (
         _ingested_at
     FROM amount_check
     WHERE _rejection_reason_final IS NULL
+),
+
+code_check AS (
+    -- LEFT JOIN against Silver transaction_codes.
+    -- INV-11: records with no matching tc row get NULL debit_credit_indicator and are quarantined.
+    -- INV-33: if Silver TC file is absent the JOIN produces NULL for every record → all quarantined.
+    SELECT
+        v.transaction_id,
+        v.account_id,
+        v.transaction_date,
+        v.amount,
+        v.transaction_code,
+        v.channel,
+        v._source_file,
+        v._ingested_at,
+        tc.debit_credit_indicator,
+        CASE
+            WHEN tc.transaction_code IS NULL THEN 'INVALID_TRANSACTION_CODE'
+            ELSE NULL
+        END AS _rejection_reason
+    FROM valid_so_far v
+    LEFT JOIN read_parquet('/app/data/silver/transaction_codes/data.parquet') tc
+        ON v.transaction_code = tc.transaction_code
+),
+
+channel_check AS (
+    -- Applied only to records passing code_check (_rejection_reason IS NULL).
+    -- INV-09: 'INVALID_CHANNEL' is the only rejection reason produced here.
+    SELECT
+        *,
+        CASE
+            WHEN channel NOT IN ('ONLINE', 'IN_STORE') THEN 'INVALID_CHANNEL'
+            ELSE NULL
+        END AS _channel_rejection_reason
+    FROM code_check
+    WHERE _rejection_reason IS NULL
 )
 
-SELECT * FROM valid_so_far
+SELECT
+    transaction_id,
+    account_id,
+    transaction_date,
+    amount,
+    transaction_code,
+    channel,
+    _source_file,
+    _ingested_at,
+    debit_credit_indicator
+FROM channel_check
+WHERE _channel_rejection_reason IS NULL
