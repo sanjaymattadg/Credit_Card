@@ -1,5 +1,7 @@
 import argparse
 import duckdb
+import json
+import subprocess
 import sys
 import uuid
 from datetime import datetime
@@ -20,6 +22,21 @@ SILVER_DIR      = DATA_DIR / "silver"
 GOLD_DIR        = DATA_DIR / "gold"
 PIPELINE_DIR    = DATA_DIR / "pipeline"
 DBT_PROJECT_DIR = Path("/app/dbt_project")
+
+
+def _parse_run_results(model_name):
+    """Return (rows_affected, message) for a named model from the last dbt run_results.json."""
+    path = DBT_PROJECT_DIR / "target" / "run_results.json"
+    try:
+        data = json.loads(path.read_text())
+        for result in data.get("results", []):
+            if result.get("unique_id", "").endswith(f".{model_name}"):
+                rows = result.get("adapter_response", {}).get("rows_affected")
+                msg = result.get("message")
+                return rows, msg
+    except Exception:
+        pass
+    return None, None
 
 
 def run_historical(start_date: str, end_date: str) -> None:
@@ -71,13 +88,79 @@ def run_historical(start_date: str, end_date: str) -> None:
                              started_at, completed_at, "FAILED", None, None, None, str(e))
         raise
 
-    # Silver and Gold — not implemented yet (SKIPPED entries per task spec)
+    # Ensure Silver directories exist before dbt writes
+    for subdir in ("transaction_codes", "accounts", "transactions"):
+        (SILVER_DIR / subdir).mkdir(parents=True, exist_ok=True)
+    (SILVER_DIR / "quarantine" / f"date={start_date}").mkdir(parents=True, exist_ok=True)
+
+    # Silver transaction codes
+    started_at = datetime.utcnow()
+    try:
+        subprocess.run(
+            ["dbt", "run",
+             "--project-dir", str(DBT_PROJECT_DIR),
+             "--profiles-dir", str(DBT_PROJECT_DIR),
+             "--select", "silver_transaction_codes",
+             "--vars", f'{{"run_id": "{run_id}"}}'],
+            check=True, capture_output=True, text=True
+        )
+        rows, _ = _parse_run_results("silver_transaction_codes")
+        completed_at = datetime.utcnow()
+        append_run_log_entry(run_id, "HISTORICAL", "silver_transaction_codes", "SILVER",
+                             started_at, completed_at, "SUCCESS", rows, rows, None, None)
+    except subprocess.CalledProcessError as e:
+        _, msg = _parse_run_results("silver_transaction_codes")
+        completed_at = datetime.utcnow()
+        append_run_log_entry(run_id, "HISTORICAL", "silver_transaction_codes", "SILVER",
+                             started_at, completed_at, "FAILED", None, None, None, msg or str(e))
+        now = datetime.utcnow()
+        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
+                             now, now, "SKIPPED", None, None, None, None)
+        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
+                             now, now, "SKIPPED", None, None, None, None)
+        raise
+
+    # INV-33: Silver transaction_codes must be non-empty before any silver_transactions step
+    tc_silver_count = duckdb.connect().execute(
+        f"SELECT count(*) FROM read_parquet('{SILVER_DIR / 'transaction_codes' / 'data.parquet'}')"
+    ).fetchone()[0]
+    if tc_silver_count == 0:
+        raise RuntimeError(
+            "INV-33 violated: Silver transaction_codes is empty before transaction promotion"
+        )
+
+    # Silver accounts + quarantine
+    started_at = datetime.utcnow()
+    try:
+        subprocess.run(
+            ["dbt", "run",
+             "--project-dir", str(DBT_PROJECT_DIR),
+             "--profiles-dir", str(DBT_PROJECT_DIR),
+             "--select", "silver_accounts", "silver_accounts_quarantine",
+             "--vars", f'{{"run_id": "{run_id}", "process_date": "{start_date}"}}'],
+            check=True, capture_output=True, text=True
+        )
+        accts_rows, _ = _parse_run_results("silver_accounts")
+        quar_rows, _ = _parse_run_results("silver_accounts_quarantine")
+        completed_at = datetime.utcnow()
+        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
+                             started_at, completed_at, "SUCCESS", accts_rows, accts_rows, None, None)
+        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
+                             started_at, completed_at, "SUCCESS", quar_rows, quar_rows, None, None)
+    except subprocess.CalledProcessError as e:
+        _, accts_msg = _parse_run_results("silver_accounts")
+        _, quar_msg = _parse_run_results("silver_accounts_quarantine")
+        completed_at = datetime.utcnow()
+        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
+                             started_at, completed_at, "FAILED", None, None, None, accts_msg or str(e))
+        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
+                             started_at, completed_at, "FAILED", None, None, None, quar_msg or str(e))
+        raise
+
+    # Gold — not yet implemented
     now = datetime.utcnow()
-    append_run_log_entry(run_id, "HISTORICAL", "silver", "SILVER",
-                         now, now, "SKIPPED", None, None, None, None)
     append_run_log_entry(run_id, "HISTORICAL", "gold", "GOLD",
                          now, now, "SKIPPED", None, None, None, None)
-    print("Silver — NOT IMPLEMENTED")
     print("Gold   — NOT IMPLEMENTED")
 
 
