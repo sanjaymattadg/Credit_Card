@@ -2,7 +2,10 @@
     config(
         materialized='external',
         location='/app/data/silver/transactions/date=' ~ var('process_date') ~ '/data.parquet',
-        format='parquet'
+        format='parquet',
+        post_hook=[
+            "SELECT CASE WHEN (SELECT count(*) FROM read_parquet('/app/data/bronze/transactions/date=" ~ var('process_date') ~ "/data.parquet')) != (SELECT count(*) FROM read_parquet('/app/data/silver/transactions/date=" ~ var('process_date') ~ "/data.parquet')) + (SELECT count(*) FROM read_parquet('/app/data/silver/quarantine/date=" ~ var('process_date') ~ "/rejected.parquet') WHERE _source_file LIKE '%transactions%') THEN error('INV-07 violated: conservation check failed — bronze_count != silver_count + quarantine_count for date=" ~ var('process_date') ~ "') ELSE NULL END"
+        ]
     )
 }}
 
@@ -13,6 +16,7 @@ WITH bronze_src AS (
         transaction_date,
         amount,
         transaction_code,
+        merchant_name,
         channel,
         _source_file,
         _ingested_at
@@ -56,6 +60,7 @@ quarantine_candidates AS (
         transaction_date,
         amount,
         transaction_code,
+        merchant_name,
         channel,
         _source_file,
         _ingested_at,
@@ -72,6 +77,7 @@ valid_so_far AS (
         transaction_date,
         amount,
         transaction_code,
+        merchant_name,
         channel,
         _source_file,
         _ingested_at
@@ -89,6 +95,7 @@ code_check AS (
         v.transaction_date,
         v.amount,
         v.transaction_code,
+        v.merchant_name,
         v.channel,
         v._source_file,
         v._ingested_at,
@@ -126,6 +133,7 @@ sign_assignment AS (
         transaction_date,
         amount,
         transaction_code,
+        merchant_name,
         channel,
         debit_credit_indicator,
         CASE
@@ -150,6 +158,41 @@ silver_ready AS (
             ELSE NULL
         END AS _sign_rejection_reason
     FROM sign_assignment
+),
+
+quarantine_all AS (
+    -- INV-06: union of all five quarantine sets — every rejected record appears exactly once.
+    -- INV-09: all _rejection_reason values are from the valid enum.
+    -- INV-08: _source_file carried verbatim from Bronze in every branch.
+    -- Branch 1: NULL_REQUIRED_FIELD
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _rejection_reason_final AS _rejection_reason
+    FROM amount_check WHERE _rejection_reason_final = 'NULL_REQUIRED_FIELD'
+    UNION ALL
+    -- Branch 2: INVALID_AMOUNT (amount <= 0)
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _rejection_reason_final AS _rejection_reason
+    FROM amount_check WHERE _rejection_reason_final = 'INVALID_AMOUNT'
+    UNION ALL
+    -- Branch 3: INVALID_TRANSACTION_CODE
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _rejection_reason
+    FROM code_check WHERE _rejection_reason = 'INVALID_TRANSACTION_CODE'
+    UNION ALL
+    -- Branch 4: INVALID_CHANNEL
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _channel_rejection_reason AS _rejection_reason
+    FROM channel_check WHERE _channel_rejection_reason = 'INVALID_CHANNEL'
+    UNION ALL
+    -- Branch 5: INVALID_AMOUNT (zero or null derived _signed_amount)
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _sign_rejection_reason AS _rejection_reason
+    FROM silver_ready WHERE _sign_rejection_reason = 'INVALID_AMOUNT'
 )
 
 SELECT
@@ -159,6 +202,7 @@ SELECT
     amount,
     _signed_amount,
     transaction_code,
+    merchant_name,
     channel,
     debit_credit_indicator,
     _source_file,
