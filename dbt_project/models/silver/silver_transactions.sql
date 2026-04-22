@@ -113,6 +113,43 @@ channel_check AS (
         END AS _channel_rejection_reason
     FROM code_check
     WHERE _rejection_reason IS NULL
+),
+
+sign_assignment AS (
+    -- Applied only to records passing channel_check.
+    -- INV-13: DR → positive _signed_amount; CR → negative _signed_amount.
+    -- ELSE produces NULL — caught by post-derivation assertion below.
+    -- INV-12: _signed_amount IS NULL OR = 0 routes to quarantine as 'INVALID_AMOUNT'.
+    SELECT
+        transaction_id,
+        account_id,
+        transaction_date,
+        amount,
+        transaction_code,
+        channel,
+        debit_credit_indicator,
+        CASE
+            WHEN debit_credit_indicator = 'DR' THEN amount
+            WHEN debit_credit_indicator = 'CR' THEN -amount
+            ELSE NULL
+        END AS _signed_amount,
+        _source_file,
+        _ingested_at
+    FROM channel_check
+    WHERE _channel_rejection_reason IS NULL
+),
+
+silver_ready AS (
+    -- Post-derivation assertion: route null or zero _signed_amount to quarantine.
+    -- INV-12: no Silver record may have null _signed_amount.
+    -- INV-09: rejection reason is 'INVALID_AMOUNT' for this edge case.
+    SELECT
+        *,
+        CASE
+            WHEN _signed_amount IS NULL OR _signed_amount = 0 THEN 'INVALID_AMOUNT'
+            ELSE NULL
+        END AS _sign_rejection_reason
+    FROM sign_assignment
 )
 
 SELECT
@@ -120,10 +157,14 @@ SELECT
     account_id,
     transaction_date,
     amount,
+    _signed_amount,
     transaction_code,
     channel,
+    debit_credit_indicator,
     _source_file,
-    _ingested_at,
-    debit_credit_indicator
-FROM channel_check
-WHERE _channel_rejection_reason IS NULL
+    _ingested_at                    AS _bronze_ingested_at,
+    '{{ var("run_id") }}'           AS _pipeline_run_id,
+    current_timestamp               AS _promoted_at,
+    TRUE                            AS _is_resolvable
+FROM silver_ready
+WHERE _sign_rejection_reason IS NULL
