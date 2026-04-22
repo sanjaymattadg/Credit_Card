@@ -33,7 +33,8 @@ A Medallion architecture batch pipeline (Bronze → Silver → Gold) that ingest
 | `dbt_project/models/silver/silver_transaction_codes.sql` | PENDING | Silver transaction codes loader model |
 | `dbt_project/models/silver/silver_accounts.sql` | PENDING | Silver accounts upsert model |
 | `dbt_project/models/silver/silver_transactions.sql` | PENDING | Silver transactions promotion model |
-| `dbt_project/models/silver/silver_quarantine.sql` | PENDING | Silver quarantine write model |
+| `dbt_project/models/silver/silver_quarantine.sql` | PENDING | Silver quarantine write model (transactions) |
+| `dbt_project/models/silver/silver_accounts_quarantine.sql` | PENDING | Silver accounts quarantine write model — registered S4.T4.3 per engineer instruction; CLAUDE.md listed silver_quarantine.sql but EXECUTION_PLAN.MD specifies this file |
 | `dbt_project/models/gold/gold_daily_summary.sql` | PENDING | Gold daily summary aggregation |
 | `dbt_project/models/gold/gold_weekly_account_summary.sql` | PENDING | Gold weekly account summary |
 | `Dockerfile` | PENDING | Container definition |

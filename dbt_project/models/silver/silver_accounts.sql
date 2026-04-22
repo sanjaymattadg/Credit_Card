@@ -24,11 +24,45 @@
     {% set silver_exists = false %}
 {% endif %}
 
-WITH bronze_delta AS (
-    -- TODO (Task 4.3): Add rejection filtering here before upsert:
-    --   NULL_REQUIRED_FIELD: exclude if account_id, open_date, credit_limit, current_balance,
-    --     billing_cycle_start, billing_cycle_end, or account_status is null or empty string
-    --   INVALID_ACCOUNT_STATUS: exclude if account_status not in ('ACTIVE', 'SUSPENDED', 'CLOSED')
+WITH bronze_src AS (
+    SELECT
+        account_id,
+        open_date,
+        credit_limit,
+        current_balance,
+        billing_cycle_start,
+        billing_cycle_end,
+        account_status,
+        _source_file,
+        _ingested_at
+    FROM read_parquet('/app/data/bronze/accounts/date={{ var("process_date") }}/data.parquet')
+),
+
+classified AS (
+    -- INV-06: every Bronze record is assigned exactly one outcome tag.
+    -- Priority order: NULL_REQUIRED_FIELD before INVALID_ACCOUNT_STATUS.
+    -- Records with _rejection_reason IS NULL are valid and enter the upsert merge.
+    -- Records with _rejection_reason IS NOT NULL are rejected and go to quarantine (silver_accounts_quarantine.sql).
+    SELECT
+        *,
+        CASE
+            WHEN account_id IS NULL OR TRIM(CAST(account_id AS VARCHAR)) = ''
+              OR open_date IS NULL
+              OR credit_limit IS NULL
+              OR current_balance IS NULL
+              OR billing_cycle_start IS NULL
+              OR billing_cycle_end IS NULL
+              OR account_status IS NULL OR TRIM(account_status) = ''
+            THEN 'NULL_REQUIRED_FIELD'
+            WHEN account_status NOT IN ('ACTIVE', 'SUSPENDED', 'CLOSED')
+            THEN 'INVALID_ACCOUNT_STATUS'
+            ELSE NULL
+        END AS _rejection_reason
+    FROM bronze_src
+),
+
+bronze_delta AS (
+    -- Only valid records enter the upsert merge (INV-06: mutually exclusive with quarantine path)
     SELECT
         account_id,
         open_date,
@@ -41,7 +75,8 @@ WITH bronze_delta AS (
         _ingested_at            AS _bronze_ingested_at,
         '{{ var("run_id") }}'   AS _pipeline_run_id,
         current_timestamp       AS _record_valid_from
-    FROM read_parquet('/app/data/bronze/accounts/date={{ var("process_date") }}/data.parquet')
+    FROM classified
+    WHERE _rejection_reason IS NULL
 ),
 
 {% if silver_exists %}
@@ -61,7 +96,7 @@ existing_silver AS (
     FROM read_parquet('{{ silver_path }}')
 ),
 retained_existing AS (
-    -- Keep existing Silver records whose account_id is NOT in today's Bronze delta
+    -- Keep existing Silver records whose account_id is NOT in today's valid Bronze delta
     SELECT * FROM existing_silver
     WHERE account_id NOT IN (SELECT account_id FROM bronze_delta)
 ),
@@ -72,7 +107,7 @@ merged AS (
 )
 {% else %}
 merged AS (
-    -- First run: no existing Silver accounts file; output is the delta only
+    -- First run: no existing Silver accounts file; output is the valid delta only
     SELECT * FROM bronze_delta
 )
 {% endif %}
