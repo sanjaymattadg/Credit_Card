@@ -125,6 +125,33 @@ silver_ready AS (
     FROM sign_assignment
 ),
 
+within_batch_dedup AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY transaction_id ORDER BY _ingested_at) AS rn
+    FROM silver_ready
+    WHERE _sign_rejection_reason IS NULL
+),
+
+existing_silver_ids AS (
+    SELECT DISTINCT transaction_id
+    FROM read_parquet('/app/data/silver/transactions/**/*.parquet')
+    WHERE transaction_date::DATE != CAST('{{ var("process_date") }}' AS DATE)
+),
+
+cross_partition_dedup AS (
+    SELECT
+        w.*,
+        CASE
+            WHEN e.transaction_id IS NOT NULL THEN 'DUPLICATE_TRANSACTION_ID'
+            WHEN w.transaction_date::DATE != CAST('{{ var("process_date") }}' AS DATE) THEN 'INVALID_TRANSACTION_DATE'
+            ELSE NULL
+        END AS _cross_rejection_reason
+    FROM within_batch_dedup w
+    LEFT JOIN existing_silver_ids e ON w.transaction_id = e.transaction_id
+    WHERE w.rn = 1
+),
+
 quarantine_all AS (
     -- Branch 1: NULL_REQUIRED_FIELD
     SELECT transaction_id, account_id, transaction_date, amount,
@@ -155,6 +182,24 @@ quarantine_all AS (
            transaction_code, merchant_name, channel, _source_file,
            _sign_rejection_reason AS _rejection_reason
     FROM silver_ready WHERE _sign_rejection_reason = 'INVALID_AMOUNT'
+    UNION ALL
+    -- Branch 6: DUPLICATE_TRANSACTION_ID (within-batch duplicate — rn > 1)
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           'DUPLICATE_TRANSACTION_ID' AS _rejection_reason
+    FROM within_batch_dedup WHERE rn > 1
+    UNION ALL
+    -- Branch 7: DUPLICATE_TRANSACTION_ID (cross-partition — transaction_id already in Silver)
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _cross_rejection_reason AS _rejection_reason
+    FROM cross_partition_dedup WHERE _cross_rejection_reason = 'DUPLICATE_TRANSACTION_ID'
+    UNION ALL
+    -- Branch 8: INVALID_TRANSACTION_DATE (INV-16 — transaction_date != process_date)
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _cross_rejection_reason AS _rejection_reason
+    FROM cross_partition_dedup WHERE _cross_rejection_reason = 'INVALID_TRANSACTION_DATE'
 )
 
 SELECT
