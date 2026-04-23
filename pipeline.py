@@ -205,11 +205,45 @@ def run_historical(start_date: str, end_date: str) -> None:
                              started_at, completed_at, "FAILED", None, None, None, quar_msg or str(e))
         raise
 
-    # Gold — not yet implemented
-    now = datetime.utcnow()
-    append_run_log_entry(run_id, "HISTORICAL", "gold", "GOLD",
-                         now, now, "SKIPPED", None, None, None, None)
-    print("Gold   — NOT IMPLEMENTED")
+    # Gold — daily summary and weekly account summary
+    (GOLD_DIR / "daily_summary").mkdir(parents=True, exist_ok=True)
+    (GOLD_DIR / "weekly_account_summary").mkdir(parents=True, exist_ok=True)
+    started_at = datetime.utcnow()
+    try:
+        subprocess.run(
+            ["dbt", "run",
+             "--project-dir", str(DBT_PROJECT_DIR),
+             "--profiles-dir", str(DBT_PROJECT_DIR),
+             "--select", "gold_daily_summary", "gold_weekly_account_summary",
+             "--vars", f'{{"run_id": "{run_id}", "process_date": "{start_date}"}}'],
+            check=True, capture_output=True, text=True
+        )
+        completed_at = datetime.utcnow()
+        conn = duckdb.connect()
+        silver_resolvable_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{SILVER_DIR}/transactions/**/*.parquet') WHERE _is_resolvable = true"
+        ).fetchone()[0]
+        daily_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{GOLD_DIR / 'daily_summary' / 'data.parquet'}')"
+        ).fetchone()[0]
+        weekly_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{GOLD_DIR / 'weekly_account_summary' / 'data.parquet'}')"
+        ).fetchone()[0]
+        append_run_log_entry(run_id, "HISTORICAL", "gold_daily_summary", "GOLD",
+                             started_at, completed_at, "SUCCESS",
+                             silver_resolvable_count, daily_count, None, None)
+        append_run_log_entry(run_id, "HISTORICAL", "gold_weekly_account_summary", "GOLD",
+                             started_at, completed_at, "SUCCESS",
+                             silver_resolvable_count, weekly_count, None, None)
+    except subprocess.CalledProcessError as e:
+        _, daily_msg = _parse_run_results("gold_daily_summary")
+        _, weekly_msg = _parse_run_results("gold_weekly_account_summary")
+        completed_at = datetime.utcnow()
+        append_run_log_entry(run_id, "HISTORICAL", "gold_daily_summary", "GOLD",
+                             started_at, completed_at, "FAILED", None, None, None, daily_msg or str(e))
+        append_run_log_entry(run_id, "HISTORICAL", "gold_weekly_account_summary", "GOLD",
+                             started_at, completed_at, "FAILED", None, None, None, weekly_msg or str(e))
+        raise
 
 
 def run_incremental() -> None:

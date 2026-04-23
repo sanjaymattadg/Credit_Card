@@ -15,5 +15,6 @@ COPY pipeline.py /app/pipeline.py
 COPY bronze_loader.py /app/bronze_loader.py
 COPY pipeline_control.py /app/pipeline_control.py
 COPY dbt_project/ /app/dbt_project/
+COPY scripts/ /app/scripts/
 
 CMD ["python", "pipeline.py"]
