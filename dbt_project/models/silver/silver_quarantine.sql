@@ -125,6 +125,14 @@ silver_ready AS (
     FROM sign_assignment
 ),
 
+within_batch_dedup AS (
+    SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY transaction_id ORDER BY _ingested_at) AS rn
+    FROM silver_ready
+    WHERE _sign_rejection_reason IS NULL
+),
+
 quarantine_all AS (
     -- Branch 1: NULL_REQUIRED_FIELD
     SELECT transaction_id, account_id, transaction_date, amount,
@@ -155,6 +163,12 @@ quarantine_all AS (
            transaction_code, merchant_name, channel, _source_file,
            _sign_rejection_reason AS _rejection_reason
     FROM silver_ready WHERE _sign_rejection_reason = 'INVALID_AMOUNT'
+    UNION ALL
+    -- Branch 6: DUPLICATE_TRANSACTION_ID (within-batch duplicate — rn > 1)
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           'DUPLICATE_TRANSACTION_ID' AS _rejection_reason
+    FROM within_batch_dedup WHERE rn > 1
 )
 
 SELECT

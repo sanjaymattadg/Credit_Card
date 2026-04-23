@@ -160,8 +160,18 @@ silver_ready AS (
     FROM sign_assignment
 ),
 
+within_batch_dedup AS (
+    -- INV-10: ROW_NUMBER over transaction_id within this Bronze file. rn=1 proceeds to Silver.
+    -- rn>1 records are within-batch duplicates and route to quarantine_all Branch 6.
+    SELECT
+        *,
+        ROW_NUMBER() OVER (PARTITION BY transaction_id ORDER BY _ingested_at) AS rn
+    FROM silver_ready
+    WHERE _sign_rejection_reason IS NULL
+),
+
 quarantine_all AS (
-    -- INV-06: union of all five quarantine sets — every rejected record appears exactly once.
+    -- INV-06: union of all six quarantine sets — every rejected record appears exactly once.
     -- INV-09: all _rejection_reason values are from the valid enum.
     -- INV-08: _source_file carried verbatim from Bronze in every branch.
     -- Branch 1: NULL_REQUIRED_FIELD
@@ -193,6 +203,14 @@ quarantine_all AS (
            transaction_code, merchant_name, channel, _source_file,
            _sign_rejection_reason AS _rejection_reason
     FROM silver_ready WHERE _sign_rejection_reason = 'INVALID_AMOUNT'
+    UNION ALL
+    -- Branch 6: DUPLICATE_TRANSACTION_ID (within-batch duplicate — rn > 1)
+    -- INV-10: intra-file duplicates detected here; cross-partition dedup is Task 6.2.
+    -- INV-09: 'DUPLICATE_TRANSACTION_ID' is the exact rejection reason string.
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           'DUPLICATE_TRANSACTION_ID' AS _rejection_reason
+    FROM within_batch_dedup WHERE rn > 1
 )
 
 SELECT
@@ -210,5 +228,5 @@ SELECT
     '{{ var("run_id") }}'           AS _pipeline_run_id,
     current_timestamp               AS _promoted_at,
     TRUE                            AS _is_resolvable
-FROM silver_ready
-WHERE _sign_rejection_reason IS NULL
+FROM within_batch_dedup
+WHERE rn = 1
