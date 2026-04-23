@@ -194,8 +194,20 @@ cross_partition_dedup AS (
     WHERE w.rn = 1
 ),
 
+account_resolution AS (
+    -- INV-14: LEFT JOIN on account_id. NULL from join → _is_resolvable = FALSE.
+    -- INV-15: unresolvable records go to Silver, NOT quarantine. No UNRESOLVABLE_ACCOUNT_ID branch exists.
+    SELECT
+        c.*,
+        CASE WHEN sa.account_id IS NOT NULL THEN TRUE ELSE FALSE END AS _is_resolvable
+    FROM cross_partition_dedup c
+    LEFT JOIN read_parquet('/app/data/silver/accounts/data.parquet') sa
+        ON c.account_id = sa.account_id
+    WHERE c._cross_rejection_reason IS NULL
+),
+
 quarantine_all AS (
-    -- INV-06: union of all seven quarantine sets — every rejected record appears exactly once.
+    -- INV-06: union of all eight quarantine sets — every rejected record appears exactly once.
     -- INV-09: all _rejection_reason values are from the valid enum.
     -- INV-08: _source_file carried verbatim from Bronze in every branch.
     -- Branch 1: NULL_REQUIRED_FIELD
@@ -265,6 +277,5 @@ SELECT
     _ingested_at                    AS _bronze_ingested_at,
     '{{ var("run_id") }}'           AS _pipeline_run_id,
     current_timestamp               AS _promoted_at,
-    TRUE                            AS _is_resolvable
-FROM cross_partition_dedup
-WHERE _cross_rejection_reason IS NULL
+    _is_resolvable
+FROM account_resolution
