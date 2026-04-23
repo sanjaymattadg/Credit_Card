@@ -43,22 +43,52 @@ def run_historical(start_date: str, end_date: str) -> None:
     run_id = str(uuid.uuid4())
     print(f"[HISTORICAL] run_id={run_id} start={start_date} end={end_date}")
 
-    # Bronze transaction codes (not date-partitioned)
-    started_at = datetime.utcnow()
-    try:
-        load_bronze_transaction_codes(run_id=run_id)
-        tc_path = BRONZE_DIR / "transaction_codes" / "data.parquet"
-        count = duckdb.connect().execute(
-            f"SELECT count(*) FROM read_parquet('{tc_path}')"
-        ).fetchone()[0]
-        completed_at = datetime.utcnow()
+    # Transaction codes idempotency check (Architecture Decision 3):
+    # Both run log SUCCESS and Silver row count > 0 must hold to skip.
+    # Silver file check prevents false-skip when Silver was lost after a prior SUCCESS log.
+    _rl_path = PIPELINE_DIR / "run_log.parquet"
+    _tc_log_ok = (
+        _rl_path.exists()
+        and duckdb.connect().execute(
+            f"SELECT count(*) FROM read_parquet('{_rl_path}') "
+            f"WHERE model_name = 'bronze_transaction_codes' AND status = 'SUCCESS'"
+        ).fetchone()[0] > 0
+    )
+    _tc_silver_path = SILVER_DIR / "transaction_codes" / "data.parquet"
+    _tc_silver_ok = False
+    if _tc_silver_path.exists():
+        try:
+            _tc_silver_ok = duckdb.connect().execute(
+                f"SELECT count(*) FROM read_parquet('{_tc_silver_path}')"
+            ).fetchone()[0] > 0
+        except Exception:
+            pass
+    skip_tc = _tc_log_ok and _tc_silver_ok
+    if skip_tc:
+        print("SKIP transaction_codes — already loaded and Silver valid")
+        _now = datetime.utcnow()
         append_run_log_entry(run_id, "HISTORICAL", "bronze_transaction_codes", "BRONZE",
-                             started_at, completed_at, "SUCCESS", count, count, None, None)
-    except Exception as e:
-        completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "bronze_transaction_codes", "BRONZE",
-                             started_at, completed_at, "FAILED", None, None, None, str(e))
-        raise
+                             _now, _now, "SKIPPED", None, None, None, None)
+        append_run_log_entry(run_id, "HISTORICAL", "silver_transaction_codes", "SILVER",
+                             _now, _now, "SKIPPED", None, None, None, None)
+
+    # Bronze transaction codes (not date-partitioned) — only when not skipped
+    if not skip_tc:
+        started_at = datetime.utcnow()
+        try:
+            load_bronze_transaction_codes(run_id=run_id)
+            tc_path = BRONZE_DIR / "transaction_codes" / "data.parquet"
+            count = duckdb.connect().execute(
+                f"SELECT count(*) FROM read_parquet('{tc_path}')"
+            ).fetchone()[0]
+            completed_at = datetime.utcnow()
+            append_run_log_entry(run_id, "HISTORICAL", "bronze_transaction_codes", "BRONZE",
+                                 started_at, completed_at, "SUCCESS", count, count, None, None)
+        except Exception as e:
+            completed_at = datetime.utcnow()
+            append_run_log_entry(run_id, "HISTORICAL", "bronze_transaction_codes", "BRONZE",
+                                 started_at, completed_at, "FAILED", None, None, None, str(e))
+            raise
 
     # Bronze transactions
     started_at = datetime.utcnow()
@@ -94,36 +124,37 @@ def run_historical(start_date: str, end_date: str) -> None:
     (SILVER_DIR / "quarantine" / f"date={start_date}").mkdir(parents=True, exist_ok=True)
     (SILVER_DIR / "transactions" / f"date={start_date}").mkdir(parents=True, exist_ok=True)
 
-    # Silver transaction codes
-    started_at = datetime.utcnow()
-    try:
-        subprocess.run(
-            ["dbt", "run",
-             "--project-dir", str(DBT_PROJECT_DIR),
-             "--profiles-dir", str(DBT_PROJECT_DIR),
-             "--select", "silver_transaction_codes",
-             "--vars", f'{{"run_id": "{run_id}"}}'],
-            check=True, capture_output=True, text=True
-        )
-        rows, _ = _parse_run_results("silver_transaction_codes")
-        completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "silver_transaction_codes", "SILVER",
-                             started_at, completed_at, "SUCCESS", rows, rows, None, None)
-    except subprocess.CalledProcessError as e:
-        _, msg = _parse_run_results("silver_transaction_codes")
-        completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "silver_transaction_codes", "SILVER",
-                             started_at, completed_at, "FAILED", None, None, None, msg or str(e))
-        now = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
-                             now, now, "SKIPPED", None, None, None, None)
-        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
-                             now, now, "SKIPPED", None, None, None, None)
-        append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
-                             now, now, "SKIPPED", None, None, None, None)
-        append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
-                             now, now, "SKIPPED", None, None, None, None)
-        raise
+    # Silver transaction codes — only when not skipped
+    if not skip_tc:
+        started_at = datetime.utcnow()
+        try:
+            subprocess.run(
+                ["dbt", "run",
+                 "--project-dir", str(DBT_PROJECT_DIR),
+                 "--profiles-dir", str(DBT_PROJECT_DIR),
+                 "--select", "silver_transaction_codes",
+                 "--vars", f'{{"run_id": "{run_id}"}}'],
+                check=True, capture_output=True, text=True
+            )
+            rows, _ = _parse_run_results("silver_transaction_codes")
+            completed_at = datetime.utcnow()
+            append_run_log_entry(run_id, "HISTORICAL", "silver_transaction_codes", "SILVER",
+                                 started_at, completed_at, "SUCCESS", rows, rows, None, None)
+        except subprocess.CalledProcessError as e:
+            _, msg = _parse_run_results("silver_transaction_codes")
+            completed_at = datetime.utcnow()
+            append_run_log_entry(run_id, "HISTORICAL", "silver_transaction_codes", "SILVER",
+                                 started_at, completed_at, "FAILED", None, None, None, msg or str(e))
+            now = datetime.utcnow()
+            append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
+                                 now, now, "SKIPPED", None, None, None, None)
+            append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
+                                 now, now, "SKIPPED", None, None, None, None)
+            append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
+                                 now, now, "SKIPPED", None, None, None, None)
+            append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
+                                 now, now, "SKIPPED", None, None, None, None)
+            raise
 
     # INV-33: Silver transaction_codes must be non-empty before any silver_transactions step
     tc_silver_count = duckdb.connect().execute(
