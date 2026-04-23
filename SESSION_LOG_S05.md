@@ -67,7 +67,7 @@ Session integration check:  [x] PASSED — gap=0 (bronze=5, silver=4, quarantine
 
 All tasks verified:          [x] Yes
 
-PR raised:                   [ ] Yes — PR#: session/05 -> main
+PR raised:                   [x] Yes — PR#5: session/05 -> main (merged)
 
 Status updated to:           DONE
 
