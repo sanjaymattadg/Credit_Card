@@ -359,7 +359,18 @@ def run_historical(start_date: str, end_date: str) -> None:
 
 def run_incremental() -> None:
     run_id = str(uuid.uuid4())
-    print(f"[INCREMENTAL] run_id={run_id} — NOT IMPLEMENTED")
+
+    # INV-28: read-only watermark check — no write here (write is Task 9.3)
+    watermark = read_watermark()
+    if watermark is None:
+        raise RuntimeError(
+            "Incremental pipeline cannot run — no watermark. Run historical pipeline first."
+        )
+
+    next_date = watermark + timedelta(days=1)
+    print(f"[INCREMENTAL] run_id={run_id} next_date={next_date}")
+
+    # Rest of incremental pipeline — NOT IMPLEMENTED
 
 
 if __name__ == "__main__":
