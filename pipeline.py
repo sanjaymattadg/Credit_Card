@@ -56,7 +56,7 @@ def _date_fully_processed(process_date_str: str) -> bool:
     ).fetchone()[0] > 0
 
 
-def _process_one_date(process_date_str: str, run_id: str) -> None:
+def _process_one_date(process_date_str: str, run_id: str, pipeline_type: str = "HISTORICAL") -> None:
     """Run the full Bronze → Silver sequence for a single date, with per-date skip check."""
     if _date_fully_processed(process_date_str):
         print(f"SKIP date={process_date_str} — all models SUCCESS")
@@ -69,7 +69,7 @@ def _process_one_date(process_date_str: str, run_id: str) -> None:
             ("silver_transactions",        "SILVER"),
             ("silver_quarantine",          "SILVER"),
         ]:
-            append_run_log_entry(run_id, "HISTORICAL", model, layer,
+            append_run_log_entry(run_id, pipeline_type, model, layer,
                                  _now, _now, "SKIPPED", None, None, None, None)
         return
 
@@ -79,11 +79,11 @@ def _process_one_date(process_date_str: str, run_id: str) -> None:
         load_bronze_transactions(date=process_date_str, run_id=run_id)
         count = bronze_row_count("transactions", process_date_str)
         completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "bronze_transactions", "BRONZE",
+        append_run_log_entry(run_id, pipeline_type, "bronze_transactions", "BRONZE",
                              started_at, completed_at, "SUCCESS", count, count, None, None)
     except Exception as e:
         completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "bronze_transactions", "BRONZE",
+        append_run_log_entry(run_id, pipeline_type, "bronze_transactions", "BRONZE",
                              started_at, completed_at, "FAILED", None, None, None, str(e))
         raise
 
@@ -93,11 +93,11 @@ def _process_one_date(process_date_str: str, run_id: str) -> None:
         load_bronze_accounts(date=process_date_str, run_id=run_id)
         count = bronze_row_count("accounts", process_date_str)
         completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "bronze_accounts", "BRONZE",
+        append_run_log_entry(run_id, pipeline_type, "bronze_accounts", "BRONZE",
                              started_at, completed_at, "SUCCESS", count, count, None, None)
     except Exception as e:
         completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "bronze_accounts", "BRONZE",
+        append_run_log_entry(run_id, pipeline_type, "bronze_accounts", "BRONZE",
                              started_at, completed_at, "FAILED", None, None, None, str(e))
         raise
 
@@ -119,22 +119,22 @@ def _process_one_date(process_date_str: str, run_id: str) -> None:
         accts_rows, _ = _parse_run_results("silver_accounts")
         quar_rows, _  = _parse_run_results("silver_accounts_quarantine")
         completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_accounts", "SILVER",
                              started_at, completed_at, "SUCCESS", accts_rows, accts_rows, None, None)
-        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_accounts_quarantine", "SILVER",
                              started_at, completed_at, "SUCCESS", quar_rows, quar_rows, None, None)
     except subprocess.CalledProcessError as e:
         _, accts_msg = _parse_run_results("silver_accounts")
         _, quar_msg  = _parse_run_results("silver_accounts_quarantine")
         completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_accounts", "SILVER",
                              started_at, completed_at, "FAILED", None, None, None, accts_msg or str(e))
-        append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_accounts_quarantine", "SILVER",
                              started_at, completed_at, "FAILED", None, None, None, quar_msg or str(e))
         now = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_transactions", "SILVER",
                              now, now, "SKIPPED", None, None, None, None)
-        append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_quarantine", "SILVER",
                              now, now, "SKIPPED", None, None, None, None)
         raise
 
@@ -160,19 +160,19 @@ def _process_one_date(process_date_str: str, run_id: str) -> None:
         quarantine_count = conn.execute(
             f"SELECT count(*) FROM read_parquet('{SILVER_DIR / 'quarantine' / f'date={process_date_str}' / 'rejected.parquet'}', hive_partitioning=false) WHERE _source_file LIKE '%transactions%'"
         ).fetchone()[0]
-        append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_transactions", "SILVER",
                              started_at, completed_at, "SUCCESS",
                              bronze_count, silver_count, quarantine_count, None)
-        append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_quarantine", "SILVER",
                              started_at, completed_at, "SUCCESS",
                              quarantine_count, quarantine_count, None, None)
     except subprocess.CalledProcessError as e:
         _, txn_msg  = _parse_run_results("silver_transactions")
         _, quar_msg = _parse_run_results("silver_quarantine")
         completed_at = datetime.utcnow()
-        append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_transactions", "SILVER",
                              started_at, completed_at, "FAILED", None, None, None, txn_msg or str(e))
-        append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
+        append_run_log_entry(run_id, pipeline_type, "silver_quarantine", "SILVER",
                              started_at, completed_at, "FAILED", None, None, None, quar_msg or str(e))
         raise
 
@@ -379,7 +379,66 @@ def run_incremental() -> None:
         )
         return
 
-    # Bronze → Silver → Gold processing (Task 9.3)
+    next_date_str = str(next_date)
+
+    # INV-33: Silver transaction_codes must be non-empty before transaction promotion
+    _tc_silver_path = SILVER_DIR / "transaction_codes" / "data.parquet"
+    if not _tc_silver_path.exists():
+        raise RuntimeError(
+            "INV-33 violated: Silver transaction_codes missing — run historical pipeline first."
+        )
+    if duckdb.connect().execute(
+        f"SELECT count(*) FROM read_parquet('{_tc_silver_path}')"
+    ).fetchone()[0] == 0:
+        raise RuntimeError(
+            "INV-33 violated: Silver transaction_codes is empty before transaction promotion"
+        )
+
+    # Bronze → Silver for next_date (INV-35: same run_id throughout)
+    _process_one_date(next_date_str, run_id, "INCREMENTAL")
+
+    # Gold — full overwrite after Silver complete
+    (GOLD_DIR / "daily_summary").mkdir(parents=True, exist_ok=True)
+    (GOLD_DIR / "weekly_account_summary").mkdir(parents=True, exist_ok=True)
+    started_at = datetime.utcnow()
+    try:
+        subprocess.run(
+            ["dbt", "run",
+             "--project-dir", str(DBT_PROJECT_DIR),
+             "--profiles-dir", str(DBT_PROJECT_DIR),
+             "--select", "gold_daily_summary", "gold_weekly_account_summary",
+             "--vars", f'{{"run_id": "{run_id}", "process_date": "{next_date_str}"}}'],
+            check=True, capture_output=True, text=True
+        )
+        completed_at = datetime.utcnow()
+        conn = duckdb.connect()
+        silver_resolvable_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{SILVER_DIR}/transactions/**/*.parquet') WHERE _is_resolvable = true"
+        ).fetchone()[0]
+        daily_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{GOLD_DIR / 'daily_summary' / 'data.parquet'}')"
+        ).fetchone()[0]
+        weekly_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{GOLD_DIR / 'weekly_account_summary' / 'data.parquet'}')"
+        ).fetchone()[0]
+        append_run_log_entry(run_id, "INCREMENTAL", "gold_daily_summary", "GOLD",
+                             started_at, completed_at, "SUCCESS",
+                             silver_resolvable_count, daily_count, None, None)
+        append_run_log_entry(run_id, "INCREMENTAL", "gold_weekly_account_summary", "GOLD",
+                             started_at, completed_at, "SUCCESS",
+                             silver_resolvable_count, weekly_count, None, None)
+    except subprocess.CalledProcessError as e:
+        _, daily_msg  = _parse_run_results("gold_daily_summary")
+        _, weekly_msg = _parse_run_results("gold_weekly_account_summary")
+        completed_at = datetime.utcnow()
+        append_run_log_entry(run_id, "INCREMENTAL", "gold_daily_summary", "GOLD",
+                             started_at, completed_at, "FAILED", None, None, None, daily_msg or str(e))
+        append_run_log_entry(run_id, "INCREMENTAL", "gold_weekly_account_summary", "GOLD",
+                             started_at, completed_at, "FAILED", None, None, None, weekly_msg or str(e))
+        raise
+
+    # INV-28: watermark advances only after all layers complete without exception
+    write_watermark(next_date, run_id)
 
 
 if __name__ == "__main__":
