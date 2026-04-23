@@ -107,7 +107,7 @@ All of the following are fixed. Do not substitute, upgrade, or add dependencies 
 - `pipeline/control.parquet` — watermark file; field: `last_processed_date`
 - `pipeline/run_log.parquet` — append-only; fields: `run_id`, `model_name`, `started_at`, `completed_at`, `status` (enum: `SUCCESS`, `FAILED`, `SKIPPED`), `records_processed`, `records_written`, `records_rejected`, `error_message`
 - `run_results.json` — dbt artifact at `target/run_results.json`; field used: `rows_affected` (records_written), `message` (error_message on failure)
-- Quarantine rejection reason codes (enum, no others permitted): `NULL_REQUIRED_FIELD`, `INVALID_AMOUNT`, `DUPLICATE_TRANSACTION_ID`, `INVALID_TRANSACTION_CODE`, `INVALID_CHANNEL`, `INVALID_ACCOUNT_STATUS`
+- Quarantine rejection reason codes (enum, no others permitted): `NULL_REQUIRED_FIELD`, `INVALID_AMOUNT`, `DUPLICATE_TRANSACTION_ID`, `INVALID_TRANSACTION_CODE`, `INVALID_CHANNEL`, `INVALID_ACCOUNT_STATUS`, `INVALID_TRANSACTION_DATE`
 
 ---
 
