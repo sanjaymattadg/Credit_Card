@@ -4,10 +4,23 @@
         location='/app/data/silver/transactions/date=' ~ var('process_date') ~ '/data.parquet',
         format='parquet',
         post_hook=[
-            "SELECT CASE WHEN (SELECT count(*) FROM read_parquet('/app/data/bronze/transactions/date=" ~ var('process_date') ~ "/data.parquet')) != (SELECT count(*) FROM read_parquet('/app/data/silver/transactions/date=" ~ var('process_date') ~ "/data.parquet')) + (SELECT count(*) FROM read_parquet('/app/data/silver/quarantine/date=" ~ var('process_date') ~ "/rejected.parquet') WHERE _source_file LIKE '%transactions%') THEN error('INV-07 violated: conservation check failed — bronze_count != silver_count + quarantine_count for date=" ~ var('process_date') ~ "') ELSE NULL END"
+            "WITH _counts AS (
+                SELECT
+                    (SELECT count(*) FROM read_parquet('/app/data/bronze/transactions/date=" ~ var('process_date') ~ "/data.parquet')) AS bronze,
+                    (SELECT count(*) FROM read_parquet('/app/data/silver/transactions/date=" ~ var('process_date') ~ "/data.parquet')) AS silver,
+                    (SELECT count(*) FROM read_parquet('/app/data/silver/quarantine/date=" ~ var('process_date') ~ "/rejected.parquet') WHERE _source_file LIKE '%transactions%') AS quarantine
+            )
+            SELECT CASE WHEN bronze != silver + quarantine
+                THEN error('INV-07 violated: bronze=' || bronze || ', silver=' || silver || ', quarantine=' || quarantine || ', gap=' || (bronze - silver - quarantine) || ' for date=" ~ var('process_date') ~ "')
+                ELSE NULL
+            END FROM _counts"
         ]
     )
 }}
+
+-- INV-16: location uses var('process_date'). All Silver survivors have transaction_date = process_date
+-- (enforced by cross_partition_dedup INVALID_TRANSACTION_DATE branch — Task 6.2), so the partition
+-- path is effectively derived from the transaction_date field, not only the process_date variable.
 
 WITH bronze_src AS (
     SELECT
