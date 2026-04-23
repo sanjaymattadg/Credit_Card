@@ -370,7 +370,16 @@ def run_incremental() -> None:
     next_date = watermark + timedelta(days=1)
     print(f"[INCREMENTAL] run_id={run_id} next_date={next_date}")
 
-    # Rest of incremental pipeline — NOT IMPLEMENTED
+    # INV-27: no-op — clean exit with no side effects if source file absent
+    source_file = SOURCE_DIR / f"transactions_{next_date.isoformat()}.csv"
+    if not source_file.exists():
+        print(
+            f"[INCREMENTAL] NOOP — no transactions file for {next_date}. "
+            "No layers written. No watermark advance."
+        )
+        return
+
+    # Bronze → Silver → Gold processing (Task 9.3)
 
 
 if __name__ == "__main__":
