@@ -170,8 +170,32 @@ within_batch_dedup AS (
     WHERE _sign_rejection_reason IS NULL
 ),
 
+existing_silver_ids AS (
+    -- INV-10: scan Silver partitions from OTHER dates only.
+    -- Excludes the current process_date partition so re-runs of the same date are idempotent
+    -- (same records promoted, not quarantined on second run). Only cross-DATE duplicates are caught.
+    SELECT DISTINCT transaction_id
+    FROM read_parquet('/app/data/silver/transactions/**/*.parquet')
+    WHERE transaction_date::DATE != CAST('{{ var("process_date") }}' AS DATE)
+),
+
+cross_partition_dedup AS (
+    -- INV-10: records already promoted in any prior partition → DUPLICATE_TRANSACTION_ID.
+    -- INV-16: records where transaction_date != process_date → INVALID_TRANSACTION_DATE.
+    SELECT
+        w.*,
+        CASE
+            WHEN e.transaction_id IS NOT NULL THEN 'DUPLICATE_TRANSACTION_ID'
+            WHEN w.transaction_date::DATE != CAST('{{ var("process_date") }}' AS DATE) THEN 'INVALID_TRANSACTION_DATE'
+            ELSE NULL
+        END AS _cross_rejection_reason
+    FROM within_batch_dedup w
+    LEFT JOIN existing_silver_ids e ON w.transaction_id = e.transaction_id
+    WHERE w.rn = 1
+),
+
 quarantine_all AS (
-    -- INV-06: union of all six quarantine sets — every rejected record appears exactly once.
+    -- INV-06: union of all seven quarantine sets — every rejected record appears exactly once.
     -- INV-09: all _rejection_reason values are from the valid enum.
     -- INV-08: _source_file carried verbatim from Bronze in every branch.
     -- Branch 1: NULL_REQUIRED_FIELD
@@ -211,6 +235,20 @@ quarantine_all AS (
            transaction_code, merchant_name, channel, _source_file,
            'DUPLICATE_TRANSACTION_ID' AS _rejection_reason
     FROM within_batch_dedup WHERE rn > 1
+    UNION ALL
+    -- Branch 7: DUPLICATE_TRANSACTION_ID (cross-partition — transaction_id already in Silver)
+    -- INV-10: combined with Branch 6, ensures global uniqueness across all Silver partitions.
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _cross_rejection_reason AS _rejection_reason
+    FROM cross_partition_dedup WHERE _cross_rejection_reason = 'DUPLICATE_TRANSACTION_ID'
+    UNION ALL
+    -- Branch 8: INVALID_TRANSACTION_DATE (INV-16 — transaction_date != process_date)
+    -- INV-06: ensures these records route to quarantine, not silently dropped.
+    SELECT transaction_id, account_id, transaction_date, amount,
+           transaction_code, merchant_name, channel, _source_file,
+           _cross_rejection_reason AS _rejection_reason
+    FROM cross_partition_dedup WHERE _cross_rejection_reason = 'INVALID_TRANSACTION_DATE'
 )
 
 SELECT
@@ -228,5 +266,5 @@ SELECT
     '{{ var("run_id") }}'           AS _pipeline_run_id,
     current_timestamp               AS _promoted_at,
     TRUE                            AS _is_resolvable
-FROM within_batch_dedup
-WHERE rn = 1
+FROM cross_partition_dedup
+WHERE _cross_rejection_reason IS NULL
