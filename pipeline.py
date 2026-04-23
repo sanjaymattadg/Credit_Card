@@ -13,7 +13,7 @@ from bronze_loader import (
     load_bronze_accounts,
     bronze_row_count,
 )
-from pipeline_control import append_run_log_entry
+from pipeline_control import append_run_log_entry, read_watermark, write_watermark
 
 DATA_DIR        = Path("/app/data")
 SOURCE_DIR      = Path("/app/source")
@@ -347,6 +347,14 @@ def run_historical(start_date: str, end_date: str) -> None:
         append_run_log_entry(run_id, "HISTORICAL", "gold_weekly_account_summary", "GOLD",
                              started_at, completed_at, "FAILED", None, None, None, weekly_msg or str(e))
         raise
+
+    # Watermark — INV-28: after loop, INV-36: write end_date, INV-29: OQ-03 guard prevents ValueError on re-run
+    end_date_obj = date.fromisoformat(end_date)
+    current_wm = read_watermark()
+    if current_wm is not None and current_wm >= end_date_obj:
+        print(f"SKIP watermark — already at or past end_date={end_date}")
+    else:
+        write_watermark(end_date_obj, run_id)
 
 
 def run_incremental() -> None:
