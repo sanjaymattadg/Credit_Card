@@ -92,6 +92,7 @@ def run_historical(start_date: str, end_date: str) -> None:
     for subdir in ("transaction_codes", "accounts", "transactions"):
         (SILVER_DIR / subdir).mkdir(parents=True, exist_ok=True)
     (SILVER_DIR / "quarantine" / f"date={start_date}").mkdir(parents=True, exist_ok=True)
+    (SILVER_DIR / "transactions" / f"date={start_date}").mkdir(parents=True, exist_ok=True)
 
     # Silver transaction codes
     started_at = datetime.utcnow()
@@ -117,6 +118,10 @@ def run_historical(start_date: str, end_date: str) -> None:
         append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
                              now, now, "SKIPPED", None, None, None, None)
         append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
+                             now, now, "SKIPPED", None, None, None, None)
+        append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
+                             now, now, "SKIPPED", None, None, None, None)
+        append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
                              now, now, "SKIPPED", None, None, None, None)
         raise
 
@@ -154,6 +159,49 @@ def run_historical(start_date: str, end_date: str) -> None:
         append_run_log_entry(run_id, "HISTORICAL", "silver_accounts", "SILVER",
                              started_at, completed_at, "FAILED", None, None, None, accts_msg or str(e))
         append_run_log_entry(run_id, "HISTORICAL", "silver_accounts_quarantine", "SILVER",
+                             started_at, completed_at, "FAILED", None, None, None, quar_msg or str(e))
+        now = datetime.utcnow()
+        append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
+                             now, now, "SKIPPED", None, None, None, None)
+        append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
+                             now, now, "SKIPPED", None, None, None, None)
+        raise
+
+    # Silver transactions + quarantine
+    started_at = datetime.utcnow()
+    try:
+        subprocess.run(
+            ["dbt", "run",
+             "--project-dir", str(DBT_PROJECT_DIR),
+             "--profiles-dir", str(DBT_PROJECT_DIR),
+             "--select", "silver_transactions", "silver_quarantine",
+             "--vars", f'{{"run_id": "{run_id}", "process_date": "{start_date}"}}'],
+            check=True, capture_output=True, text=True
+        )
+        completed_at = datetime.utcnow()
+        conn = duckdb.connect()
+        bronze_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{BRONZE_DIR / 'transactions' / f'date={start_date}' / 'data.parquet'}')"
+        ).fetchone()[0]
+        silver_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{SILVER_DIR / 'transactions' / f'date={start_date}' / 'data.parquet'}')"
+        ).fetchone()[0]
+        quarantine_count = conn.execute(
+            f"SELECT count(*) FROM read_parquet('{SILVER_DIR / 'quarantine' / f'date={start_date}' / 'rejected.parquet'}', hive_partitioning=false) WHERE _source_file LIKE '%transactions%'"
+        ).fetchone()[0]
+        append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
+                             started_at, completed_at, "SUCCESS",
+                             bronze_count, silver_count, quarantine_count, None)
+        append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
+                             started_at, completed_at, "SUCCESS",
+                             quarantine_count, quarantine_count, None, None)
+    except subprocess.CalledProcessError as e:
+        _, txn_msg = _parse_run_results("silver_transactions")
+        _, quar_msg = _parse_run_results("silver_quarantine")
+        completed_at = datetime.utcnow()
+        append_run_log_entry(run_id, "HISTORICAL", "silver_transactions", "SILVER",
+                             started_at, completed_at, "FAILED", None, None, None, txn_msg or str(e))
+        append_run_log_entry(run_id, "HISTORICAL", "silver_quarantine", "SILVER",
                              started_at, completed_at, "FAILED", None, None, None, quar_msg or str(e))
         raise
 
