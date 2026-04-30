@@ -38,10 +38,10 @@
 
 | Check | Description | Invariant | Value | Expected | Result |
 |---|---|---|---|---|---|
-| 10.3a | Gold daily_summary row count == distinct transaction dates in Silver | INV-21 | — | 0 row diff | |
-| 10.3b | Gold `total_signed_amount` per day matches Silver sum | INV-22 | — | 0 rows with diff > 0.001 | |
-| 10.3c | Gold `total_purchases` per account per week matches Silver count | INV-22 | — | 0 mismatched rows | |
-| 10.3d | Gold excludes unresolvable transactions | INV-34 | — | 0 | |
+| 10.3a | Gold daily_summary row count == distinct transaction dates in Silver | INV-21 | Gold=7, Silver distinct=7, diff=0 | 0 row diff | **PASS** |
+| 10.3b | Gold `total_signed_amount` per day matches Silver sum | INV-22 | 0 mismatched days | 0 rows with diff > 0.001 | **PASS** |
+| 10.3c | Gold `total_purchases` per account per week matches Silver count | INV-22 | 0 mismatched rows | 0 mismatched rows | **PASS** |
+| 10.3d | Gold excludes unresolvable transactions | INV-34 | 0 | 0 | **PASS** |
 
 ---
 
@@ -63,7 +63,7 @@
 | Task | Status |
 |---|---|
 | 10.1 Bronze and Silver Completeness | DONE — ALL PASS |
-| 10.2 Gold Correctness | NOT STARTED |
+| 10.2 Gold Correctness | DONE — ALL PASS |
 | 10.3 Idempotency and Audit Trail | NOT STARTED |
 | 10.4 System Sign-Off Record | NOT STARTED |
 
