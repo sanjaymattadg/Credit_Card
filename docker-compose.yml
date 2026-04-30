@@ -2,6 +2,6 @@ services:
   pipeline:
     build: .
     volumes:
-      - ./source:/app/source:ro
+      - ./source:/app/source
       - ./data:/app/data
       - ./dbt_project:/app/dbt_project
