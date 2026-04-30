@@ -3,7 +3,7 @@
 **PBVI Profile:** DATA_ACCELERATOR  
 **Classification:** Training Demo System  
 **Phase:** 1 — Repository Scaffold  
-**Last Updated:** 2026-04-20
+**Last Updated:** 2026-04-30
 
 ---
 
@@ -44,6 +44,10 @@ A Medallion architecture batch pipeline (Bronze → Silver → Gold) that ingest
 | `scripts/` | PENDING | Verification scripts (Sessions S7–S9) |
 | `README.md` | DONE | Project overview |
 | `PROJECT_MANIFEST.md` | DONE | This file |
+| `docs/ARCHITECTURE.MD` | PRESENT | System architecture reference document |
+| `docs/INVARIANTS.MD` | PRESENT | Full invariant catalogue |
+| `EXECUTION_PLAN.MD` | PRESENT | Session-by-session execution plan and task prompts |
+| `verification/VERIFICATION_CHECKLIST.md` | PRESENT | Phase 8 sign-off verification checklist |
 
 ---
 
