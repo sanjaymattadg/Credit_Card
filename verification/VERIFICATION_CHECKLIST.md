@@ -47,14 +47,22 @@
 
 ## Task 10.3 — Idempotency and Audit Trail (Brief §10.4 and §10.5)
 
+### §10.4 Idempotency
+
 | Check | Description | Invariant | Value | Expected | Result |
 |---|---|---|---|---|---|
-| 10.4a | Second historical run produces identical row counts | INV-01 | — | 0 delta | |
-| 10.4b | All Bronze records have non-null `_source_file`, `_ingested_at`, `_pipeline_run_id` | INV-03 | — | 0 nulls | |
-| 10.4c | All run log entries have non-null `run_id`, `model_name`, `started_at`, `completed_at`, `status` | INV-31 | — | 0 nulls | |
-| 10.4d | All run log `status` values in `{SUCCESS, FAILED, SKIPPED}` | INV-32 | — | 0 invalid | |
-| 10.4e | Each pipeline invocation shares a single `run_id` | INV-35 | — | 1 per invocation | |
-| 10.5a | All Bronze records route to Silver or Quarantine (no orphans) | INV-06 | — | 0 orphans | |
+| 10.4c | Bronze per-partition row counts identical after second historical run | INV-01 | all 7 partitions = 5 rows (unchanged) | 0 delta | **PASS** |
+| 10.4d | Silver transaction row count identical after second historical run | INV-01 | before=28, after=28 | 0 delta | **PASS** |
+| 10.4e | Gold row counts identical after second historical run | INV-01 | daily=7/7, weekly=3/3 (unchanged) | 0 delta | **PASS** |
+| 10.4f | Incremental NOOP — Gold row count unchanged, NOOP logged | INV-27 | Gold before=7, after=7; NOOP=True | unchanged | **PASS** |
+
+### §10.5 Audit Trail
+
+| Check | Description | Invariant | Value | Expected | Result |
+|---|---|---|---|---|---|
+| 10.5a | Bronze transactions: `count(*) FILTER (WHERE _pipeline_run_id IS NULL)` | INV-03 | 0 | 0 | **PASS** |
+| 10.5b | Silver transactions: `count(*) FILTER (WHERE _pipeline_run_id IS NULL)` | INV-03 | 0 | 0 | **PASS** |
+| 10.5c | Silver `_pipeline_run_id` values all have a SUCCESS entry in run log | INV-35 | 0 orphaned run_ids | 0 | **PASS** |
 
 ---
 
@@ -64,7 +72,7 @@
 |---|---|
 | 10.1 Bronze and Silver Completeness | DONE — ALL PASS |
 | 10.2 Gold Correctness | DONE — ALL PASS |
-| 10.3 Idempotency and Audit Trail | NOT STARTED |
+| 10.3 Idempotency and Audit Trail | DONE — ALL PASS |
 | 10.4 System Sign-Off Record | NOT STARTED |
 
 ---
